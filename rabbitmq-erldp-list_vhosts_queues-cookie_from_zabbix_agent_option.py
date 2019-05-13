@@ -13,7 +13,7 @@ parser = argparse.ArgumentParser(description='Retrieve list of vhosts from Rabbi
 
 parser.add_argument('target', action='store', type=str, help='RabbitMQ node address or FQDN')
 parser.add_argument('mode', action='store', type=str, help='Script mode (vhosts/queues)')
-parser.add_argument('--vhost', type=str, default="", help='RabbitMQ vhost (queues mode only)')
+parser.add_argument('-p', type=str, default="", help='RabbitMQ vhost (queues mode only)')
 parser.add_argument('--cookie', type=str, default="", help='RabbitMQ Erlang cookie')
 parser.add_argument('--port', type=int, default=0, help='RabbitMQ Erlang TCP port')
 args = parser.parse_args()
