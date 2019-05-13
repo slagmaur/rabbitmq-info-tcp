@@ -3,7 +3,6 @@
 from struct import pack, unpack
 from socket import socket, AF_INET, SOCK_STREAM
 from hashlib import md5
-from binascii import hexlify, unhexlify
 from random import choice
 from string import ascii_uppercase
 import sys
