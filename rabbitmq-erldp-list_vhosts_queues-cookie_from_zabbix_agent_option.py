@@ -200,7 +200,7 @@ if args.mode == 'vhosts':
         print(vhost)
 
 if args.mode == 'queues':
-    vhost = args.vhost.encode('ascii')
+    vhost = args.p.encode('ascii')
     if get_rabbit_version(args.target) == '3.7.7':
         data = pack('!7B%ss2B3s9I' % len(name), 131, 68, 2, 158, 0, 96, len(name), name,
                     60, 3, b'rex', 0x68046113, 0x67520000, 0x00005b00, 0x00000003, 0x52017200,
