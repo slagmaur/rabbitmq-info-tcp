@@ -160,8 +160,8 @@ if args.mode == 'vhosts':
                              0x00000000, 0x03720003, 0x52000300, 0x00cce5e6, 0xa4000132, 0x870ce868,
                              0x05520452, 0x0552066a, 0x67520000, 0x00003400, 0x00000003)
 
-    demonitor_p1 = pack('!3B11I', 0, 0, 0, 0x2b834402, 0x16000b3c, 0x68046114, 0x67520000, 0x00004c00,
-                        0x00000003, 0x52017200, 0x03520003, 0x0000cce5, 0xe6a40001, 0x32870ce8)
+    demonitor_p = pack('!3B11I', 0, 0, 0, 0x2b834402, 0x16000b3c, 0x68046114, 0x67520000, 0x00004c00,
+                       0x00000003, 0x52017200, 0x03520003, 0x0000cce5, 0xe6a40001, 0x32870ce8)
 
     reg_send_rabbit_vhosts = pack('!41I', 0x0000002b, 0x83440216, 0x000b3c68, 0x04611367, 0x52000000, 0x004c0000,
                                   0x00000352, 0x01720003, 0x52000300, 0x00cce7e6, 0xa4000132, 0x870ce800,
@@ -173,9 +173,8 @@ if args.mode == 'vhosts':
 
     sock.sendall(monitor_p)
     sock.sendall(reg_send_ticktime)
-    data = sock.recv(4096)
-    sock.sendall(demonitor_p1)
-
+    sock.recv(4096)
+    sock.sendall(demonitor_p)
     sock.sendall(reg_send_rabbit_vhosts)
     for vhost in parse_vhost_recv(sock):
         print(vhost)
@@ -225,7 +224,6 @@ if args.mode == 'queues':
                     0x00003400, 0x00000003)
         reg_send_rabbit_queues += pack('!I', len(data)) + data
         sock.sendall(reg_send_rabbit_queues)
-        sock.settimeout(0.5)
         queues = parse_queues_recv(sock)
         for x in queues:
             print(x)
