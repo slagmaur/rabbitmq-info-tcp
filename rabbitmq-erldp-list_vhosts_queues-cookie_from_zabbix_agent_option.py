@@ -226,7 +226,7 @@ if args.mode == 'queues':
         sock.sendall(reg_send_rabbit_queues)
         queues = parse_queues_recv(sock)
         for x in queues:
-            print(x)
+            print(x[0], x[1])
 
     else:
         data = pack('!2BI', 131, 68, 0x02890052) + \
@@ -264,6 +264,6 @@ if args.mode == 'queues':
         sock.sendall(reg_send_rabbit_queues)
         queues = parse_queues_recv(sock)
         for x in queues:
-            print(x)
+            print(x[0], x[1])
 
 sock.close()
