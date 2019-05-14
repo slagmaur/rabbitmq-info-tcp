@@ -1,8 +1,9 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*-
 from struct import pack, unpack
-from socket import socket, AF_INET, SOCK_STREAM
+from socket import socket, AF_INET, SOCK_STREAM, timeout
 from hashlib import md5
+from binascii import hexlify, unhexlify
 from random import choice
 from string import ascii_uppercase
 import sys
@@ -64,40 +65,20 @@ def parse_vhost_recv(s):
             return
 
 
-def parse_queues_recv_old(s, vhost):
-    s.recv(29)
-    while True:
-        step = s.recv(72 + 4 + len(vhost))
-        if len(step) != 72 + 4 + len(vhost):
-            return
-        length = s.recv(4)
-        if len(length) != 4:
-            return
-        (length,) = unpack('!I', length)
-        queue = s.recv(length)
-        if len(queue) != length:
-            return
-        yield queue.decode('ascii')
-        s.recv(3)
-
-
-def parse_queues_recv_new(s, vhost):
-    s.recv(61)
-    s.recv(55)
-    s.recv(29)
-    while True:
-        step = s.recv(72 + 4 + len(vhost))
-        if len(step) != 72 + 4 + len(vhost):
-            return
-        length = s.recv(4)
-        if len(length) != 4:
-            return
-        (length,) = unpack('!I', length)
-        queue = s.recv(length)
-        if len(queue) != length:
-            return
-        yield queue.decode('ascii')
-        s.recv(3)
+def parse_queues_recv(s):
+    sock.settimeout(0.5)
+    queues = b''
+    try:
+        while 1:
+            data = sock.recv(65536)
+            queues += data
+    except timeout:
+        pass
+    queues = queues.split(b'\x52\x04\x6d')[1:]
+    queues = [x.split(b'\x6a\x52\x06')[0][4:] for x in queues]
+    return [(x.split(b'\x68\x02\x52\x05')[0].decode('ascii'),
+             int.from_bytes(x.split(b'\x68\x02\x52\x05')[1][1:], byteorder='big'))
+            for x in queues]
 
 
 def get_erldp_port(target):
@@ -200,92 +181,91 @@ if args.mode == 'vhosts':
         print(vhost)
 
 if args.mode == 'queues':
+    rabbit_ver = get_rabbit_version(args.target)
     vhost = args.p.encode('ascii')
-    if get_rabbit_version(args.target) == '3.7.7':
-        data = pack('!7B%ss2B3s9I' % len(name), 131, 68, 2, 158, 0, 96, len(name), name,
-                    60, 3, b'rex', 0x68046113, 0x67520000, 0x00005b00, 0x00000003, 0x52017200,
-                    0x03520003, 0x00018e98, 0x54a80001, 0x761e3ea5)
-        monitorp = pack('!I', len(data)) + data
-        sock.sendall(monitorp)
-        reg_send_ticktimr = pack('!3B34I', 0, 0, 0, 0x87834407, 0x86a19808, 0x6005003c, 0xd5092467, 0x656e5f63,
+    if '3.7' in rabbit_ver:
+        data = pack('!2BI', 131, 68, 0x029e000b) + \
+               pack('!B%ss' % len(name), len(name), name) + \
+               pack('!B10I', 60, 0x03726578, 0x68046113, 0x67520000, 0x00005300, 0x00000003,
+                    0x52017200, 0x03520003, 0x00000e15, 0x942c0002, 0x34bee3c8)
+        monitor_p = pack('!I', len(data)) + data
+        sock.sendall(monitor_p)
+        reg_send_ticktime = pack('!3B34I', 0, 0, 0, 0x87834407, 0x86d19808, 0x0b05003c, 0x96092467, 0x656e5f63,
                                  0x616c6c0a, 0x0463616c, 0x6c940a6e, 0x65745f6b, 0x65726e65, 0x6c8f1067,
                                  0x65745f6e, 0x65745f74, 0x69636b74, 0x696d6568, 0x04610667, 0x52000000,
-                                 0x005b0000, 0x00000352, 0x01520268, 0x03520368, 0x02675200, 0x0000005b,
-                                 0x00000000, 0x03720003, 0x52000300, 0x018e9854, 0xa8000176, 0x1e3ea568,
+                                 0x00530000, 0x00000352, 0x01520268, 0x03520368, 0x02675200, 0x00000053,
+                                 0x00000000, 0x03720003, 0x52000300, 0x000e1594, 0x2c000234, 0xbee3c868,
                                  0x05520452, 0x0552066a, 0x67520000, 0x00003400, 0x00000003)
-        sock.sendall(reg_send_ticktimr)
-        data = sock.recv(4096)
-        demonitor_p2 = pack('!3B11I', 0, 0, 0, 0x2b834402, 0x1600603c, 0x68046114, 0x67520000, 0x00005b00,
-                            0x00000003, 0x52017200, 0x03520003, 0x00018e98, 0x54a80001, 0x761e3ea5)
-        sock.sendall(demonitor_p2)
-        data3 = pack('!2B30I', 131, 68, 0x080621b0, 0x9b006005, 0x3cd50a22, 0x0f726162, 0x6269745f,
-                     0x616d7171, 0x75657565, 0xab0e656d, 0x69745f69, 0x6e666f5f, 0x646f776e,
-                     0x8c046e61, 0x6d656804, 0x61066752, 0x00000000, 0x65000000, 0x00035201,
-                     0x52026803, 0x52036802, 0x67520000, 0x00006500, 0x00000003, 0x72000352,
-                     0x00030001, 0x8eb754a8, 0x0001761e, 0x3ea56805, 0x52045205, 0x52066c00,
-                     0x0000046d) + \
-                pack('!I%ss' % len(vhost), len(vhost), vhost) + \
-                pack('!3B12I', 108, 0, 0, 0x00015207, 0x6a720003, 0x52000300, 0x018ea254, 0xa8000176,
-                     0x1e3ea567, 0x52000000, 0x004c0000, 0x0000036a, 0x67520000, 0x00003400,
-                     0x00000003)
-        p3 = pack('!I', len(data3)) + data3
-        data5 = pack('!2B7I', 131, 68, 0x09062130, 0xab016005, 0x3cd50a22, 0x770d656d, 0x69745f69,
-                     0x6e666f5f, 0x616c6c6a) + \
-                pack('!B%ss' % len(rabbitname), len(rabbitname), rabbitname) + \
-                pack('!3B19I', 140, 104, 4, 0x61066752, 0x00000000, 0x66000000, 0x00035201, 0x52026803,
-                     0x52036802, 0x67520000, 0x00006600, 0x00000003, 0x72000352, 0x00030001,
-                     0x8eb854a8, 0x0001761e, 0x3ea56805, 0x52045205, 0x52066c00, 0x0000056c,
-                     0x00000001, 0x52076a6d) + \
-                pack('!I%ss' % len(vhost), len(vhost), vhost) + \
-                pack('!3B12I', 108, 0, 0, 0x00015208, 0x6a720003, 0x52000300, 0x018ea254, 0xa8000176,
-                     0x1e3ea567, 0x52000000, 0x004c0000, 0x0000036a, 0x67520000, 0x00003400,
-                     0x00000003)
-        p5 = pack('!I', len(data5)) + data5
-        reg_send_rabbit_queues = pack('!3B11I', 0, 0, 0, 0x2b834402, 0x1600603c, 0x68046114, 0x67520000, 0x00006400,
-                                      0x00000003, 0x52017200, 0x03520003, 0x00018eb0, 0x54a80001, 0x761e3ea5) + \
-                                 pack('!3B11I', 0, 0, 0, 0x2b834402, 0x1600603c, 0x68046113, 0x67520000, 0x00006500,
-                                      0x00000003, 0x52017200, 0x03520003, 0x00018eb7, 0x54a80001, 0x761e3ea5) + \
-                                 p3 + \
-                                 pack('!3B11I', 0, 0, 0, 0x2b834402, 0x1600603c, 0x68046113, 0x67520000, 0x00006600,
-                                      0x00000003, 0x52017200, 0x03520003, 0x00018eb8, 0x54a80001, 0x761e3ea5) + \
-                                 p5
+        sock.sendall(reg_send_ticktime)
+        sock.recv(4096)
+        demonitor_p = pack('!3B11I', 0, 0, 0, 0x2b834402, 0x16000b3c, 0x68046114, 0x67520000, 0x00005300,
+                           0x00000003, 0x52017200, 0x03520003, 0x00000e15, 0x942c0002, 0x34bee3c8)
+        sock.sendall(demonitor_p)
+        data = pack('!33I', 0x83440906, 0x51b09b09, 0x0b053c96, 0x0a220f72, 0x61626269,
+                    0x745f616d, 0x71717565, 0x7565ab0e, 0x656d6974, 0x5f696e66, 0x6f5f646f,
+                    0x776e8c04, 0x6e616d65, 0x71086d65, 0x73736167, 0x65736804, 0x61066752,
+                    0x00000000, 0x5d000000, 0x00035201, 0x52026803, 0x52036802, 0x67520000,
+                    0x00005d00, 0x00000003, 0x72000352, 0x00030000, 0x0e32942c, 0x000234be,
+                    0xe3c86805, 0x52045205, 0x52066c00, 0x0000046d) + \
+               pack('!I%ss' % len(vhost), len(vhost), vhost) + \
+               pack('!B13I', 108, 0x00000002, 0x52075208, 0x6a720003, 0x52000300, 0x000e2094,
+                    0x2c000234, 0xbee3c867, 0x52000000, 0x004c0000, 0x0000036a, 0x67520000,
+                    0x00003400, 0x00000003)
+        reg_send_rabbit_queues = pack('!I', len(data)) + data
+        data = pack('!3B7I', 131, 68, 10, 0x065130ab, 0x11000b05, 0x3c960a22, 0x770d656d, 0x69745f69,
+                    0x6e666f5f, 0x616c6c6a) + \
+               pack('!B%ss' % len(rabbitname), len(rabbitname), rabbitname) + \
+               pack('!20I', 0x8c716804, 0x61066752, 0x00000000, 0x5e000000, 0x00035201,
+                    0x52026803, 0x52036802, 0x67520000, 0x00005e00, 0x00000003, 0x72000352,
+                    0x00030000, 0x0e39942c, 0x000234be, 0xe3c86805, 0x52045205, 0x52066c00,
+                    0x0000056c, 0x00000001, 0x52076a6d) + \
+               pack('!I%ss' % len(vhost), len(vhost), vhost) + \
+               pack('!B13I', 108, 0x00000002, 0x52085209, 0x6a720003, 0x52000300, 0x000e2094,
+                    0x2c000234, 0xbee3c867, 0x52000000, 0x004c0000, 0x0000036a, 0x67520000,
+                    0x00003400, 0x00000003)
+        reg_send_rabbit_queues += pack('!I', len(data)) + data
         sock.sendall(reg_send_rabbit_queues)
-        for queue in parse_queues_recv_new(sock, vhost):
-            print(queue)
+        sock.settimeout(0.5)
+        queues = parse_queues_recv(sock)
+        for x in queues:
+            print(x)
+
     else:
-        data = pack('!7B%ss2B3s9I' % len(name), 131, 68, 2, 137, 0, 82, len(name), name,
-                    236, 3, b'rex', 0x68046113, 0x67520000, 0x00000300, 0x00000002, 0x52017200,
-                    0x03520002, 0x00000034, 0x0000002e, 0x00000000)
-        monitorp = pack('!I', len(data)) + data
-        sock.sendall(monitorp)
-        reg_send_ticktimr = pack('!3B34I', 0, 0, 0, 0x87834407, 0x81f0980f, 0x520500ec, 0x63092467, 0x656e5f63,
+        data = pack('!2BI', 131, 68, 0x02890052) + \
+               pack('!B%ss' % len(name), len(name), name) + \
+               pack('!B10I', 236, 0x03726578, 0x68046113, 0x67520000, 0x00000300, 0x00000002,
+                    0x52017200, 0x03520002, 0x0000003b, 0x00000030, 0x00000000)
+        monitor_p = pack('!I', len(data)) + data
+        sock.sendall(monitor_p)
+        reg_send_ticktime = pack('!3B34I', 0, 0, 0, 0x87834407, 0x81a0980f, 0x520500ec, 0xaf092467, 0x656e5f63,
                                  0x616c6c0a, 0x0463616c, 0x6c850a6e, 0x65745f6b, 0x65726e65, 0x6c2b1067,
                                  0x65745f6e, 0x65745f74, 0x69636b74, 0x696d6568, 0x04610667, 0x52000000,
                                  0x00030000, 0x00000252, 0x01520268, 0x03520368, 0x02675200, 0x00000003,
-                                 0x00000000, 0x02720003, 0x52000200, 0x00003400, 0x00002e00, 0x00000068,
+                                 0x00000000, 0x02720003, 0x52000200, 0x00003b00, 0x00003000, 0x00000068,
                                  0x05520452, 0x0552066a, 0x67520000, 0x00003000, 0x00000002)
-        sock.sendall(reg_send_ticktimr)
+        sock.sendall(reg_send_ticktime)
         sock.recv(4096)
-        demonitor_p2 = pack('!3B11I', 0, 0, 0, 0x2b834402, 0x010052ec, 0x68046114, 0x67520000, 0x00000300,
-                            0x00000002, 0x52017200, 0x03520002, 0x00000034, 0x0000002e, 0x00000000)
-        sock.sendall(demonitor_p2)
-        monitorp1 = pack('!3B11I', 0, 0, 0, 0x2b834402, 0x010052ec, 0x68046113, 0x67520000, 0x00004100,
-                         0x00000002, 0x52017200, 0x03520002, 0x00000036, 0x0000002e, 0x00000000)
-        data = pack('!2B30I', 131, 68, 0x09017080, 0x98085205, 0xec630ac2, 0x0f726162, 0x6269745f,
-                    0x616d7171, 0x75657565, 0xc308696e, 0x666f5f61, 0x6c6c7d04, 0x6e616d65,
-                    0x01047472, 0x75656804, 0x61066752, 0x00000000, 0x41000000, 0x00025201,
-                    0x52026803, 0x52036802, 0x67520000, 0x00004100, 0x00000002, 0x72000352,
-                    0x00020000, 0x003b0000, 0x002e0000, 0x00006805, 0x52045205, 0x52066c00,
-                    0x0000066d) + \
+        demonitor_p = pack('!3B11I', 0, 0, 0, 0x2b834402, 0x010052ec, 0x68046114, 0x67520000, 0x00000300,
+                           0x00000002, 0x52017200, 0x03520002, 0x0000003b, 0x00000030, 0x00000000)
+        sock.sendall(demonitor_p)
+        monitor_p2 = pack('!3B11I', 0, 0, 0, 0x2b834402, 0x010052ec, 0x68046113, 0x67520000, 0x00000300,
+                          0x00000002, 0x52017200, 0x03520002, 0x00000042, 0x00000030, 0x00000000)
+        data = pack('!1B33I', 131, 0x440a0120, 0x80988900, 0x5205ecaf, 0x0ac20f72, 0x61626269,
+                    0x745f616d, 0x71717565, 0x7565c308, 0x696e666f, 0x5f616c6c, 0x7d046e61,
+                    0x6d656308, 0x6d657373, 0x61676573, 0x01047472, 0x75656804, 0x61066752,
+                    0x00000000, 0x41000000, 0x00025201, 0x52026803, 0x52036802, 0x67520000,
+                    0x00004100, 0x00000002, 0x72000352, 0x00020000, 0x00420000, 0x00300000,
+                    0x00006805, 0x52045205, 0x52066c00, 0x0000066d) + \
                pack('!I%ss' % len(vhost), len(vhost), vhost) + \
-               pack('!3B13I', 108, 0, 0, 0x00015207, 0x6a520852, 0x08720003, 0x52000200, 0x00003700,
-                    0x00002e00, 0x00000067, 0x52000000, 0x00030000, 0x0000026a, 0x67520000,
-                    0x00003000, 0x00000002)
+               pack('!1B14I', 108, 0x00000002, 0x52075208, 0x6a520952, 0x09720003, 0x52000200,
+                    0x00003e00, 0x00003000, 0x00000067, 0x52000000, 0x00030000, 0x0000026a,
+                    0x67520000, 0x00003000, 0x00000002)
         reg_send_rabbit_queues = pack('!I', len(data)) + data
 
-        sock.sendall(monitorp1)
+        sock.sendall(monitor_p2)
         sock.sendall(reg_send_rabbit_queues)
-        for queue in parse_queues_recv_old(sock, vhost):
-            print(queue)
+        queues = parse_queues_recv(sock)
+        for x in queues:
+            print(x)
 
 sock.close()
