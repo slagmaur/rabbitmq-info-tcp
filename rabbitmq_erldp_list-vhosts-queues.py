@@ -1,9 +1,8 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 from struct import pack, unpack
 from socket import socket, AF_INET, SOCK_STREAM, timeout
 from hashlib import md5
-from binascii import hexlify, unhexlify
 from random import choice
 from string import ascii_uppercase
 import sys
